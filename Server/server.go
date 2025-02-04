@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/go-redis/redis/v8"
@@ -38,6 +39,7 @@ func NewServer() *Server {
 	err := redisClient.Ping(context.Background()).Err()
 	if err != nil {
 		fmt.Println("Error connecting to Redis:", err)
+		os.Exit(1)
 	} else {
 		fmt.Println("Redis Connection established.")
 	}
@@ -103,6 +105,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Subscribe to the server channel
+	serverSubscriber := s.redisClient.Subscribe(s.ctx, "server")
+	go s.subscribeToListUpdates(serverSubscriber)
+
+	// Broadcast the user & channel list to all clients
 	s.broadcastUserList()
 	s.broadcastChannelList()
 
@@ -115,6 +122,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		fmt.Printf("User %s (session %s) disconnected\n", username, sessionID)
 
+		//Write to Redis Channel "server"
 		s.broadcastUserList()
 	}()
 
@@ -188,7 +196,46 @@ func (s *Server) createChannelList() []string {
 	return channelList
 }
 
-// REDIS SUBSCRIPTION
+// -- REDIS --
+
+// REDIS SUBSCRIPTION LISTS
+
+func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
+	for {
+		msg, err := subscriber.ReceiveMessage(s.ctx)
+
+		if err != nil {
+			fmt.Printf("Error receiving SERVER update: %v\n", err)
+			return
+		}
+
+		var message Message
+		if err := json.Unmarshal([]byte(msg.Payload), &message); err != nil {
+			fmt.Printf("Error unmarshaling message for SERVER: %v\n", err)
+			continue
+		}
+
+		if message.Type == "userList" {
+			var userList []string
+			if err := json.Unmarshal([]byte(message.Message), &userList); err == nil {
+				s.broadcastMessage([]byte(msg.Payload), "")
+			} else {
+				fmt.Printf("Error unmarshaling user list: %v\n", err)
+			}
+		} else if message.Type == "channelList" {
+			var channelList []string
+			if err := json.Unmarshal([]byte(message.Message), &channelList); err == nil {
+				s.broadcastMessage([]byte(msg.Payload), "")
+			} else {
+				fmt.Printf("Error unmarshaling channel list: %v\n", err)
+			}
+		} else {
+			fmt.Printf("Invalid message type for SERVER: %s\n", message.Type)
+		}
+	}
+}
+
+// REDIS SUBSCRIPTION GROUP MESSAGING
 
 func (s *Server) joinChannel(username string, channelName string) {
 	s.mu.Lock()
@@ -230,7 +277,14 @@ func (s *Server) handleGroupMessages(channelName string, subscriber *redis.PubSu
 			fmt.Printf("Error unmarshaling message for channel %s: %v\n", channelName, err)
 			continue
 		}
-		s.broadcastMessage([]byte(msg.Payload), channelName)
+		if message.Type == "broadcast" {
+			s.broadcastMessage([]byte(msg.Payload), channelName)
+		}
+		// else if message.Type == "directMessage" {
+		// 	s.directMessage(message.To, message.From, message.SessionID, []byte(message.Message))
+		// } else {
+		// 	fmt.Printf("Invalid message type for channel %s: %s\n", channelName, message.Type)
+		// }
 	}
 }
 
@@ -251,7 +305,6 @@ func (s *Server) broadcast(from string, to string, messageText []byte) {
 
 	if err := s.redisClient.Publish(s.ctx, "channel:"+to, message).Err(); err != nil {
 		fmt.Printf("Error publishing message to channel %s: %v\n", to, err)
-		return
 	}
 }
 
@@ -272,7 +325,9 @@ func (s *Server) broadcastUserList() {
 		return
 	}
 
-	s.broadcastMessage(message, "")
+	if err := s.redisClient.Publish(s.ctx, "server", message).Err(); err != nil {
+		fmt.Printf("Error updating User List to SERVER: %v\n", err)
+	}
 }
 
 func (s *Server) broadcastChannelList() {
@@ -292,7 +347,9 @@ func (s *Server) broadcastChannelList() {
 		return
 	}
 
-	s.broadcastMessage(message, "")
+	if err := s.redisClient.Publish(s.ctx, "server", message).Err(); err != nil {
+		fmt.Printf("Error updating Channel List to SERVER: %v\n", err)
+	}
 }
 
 func (s *Server) broadcastMessage(message []byte, channel string) {
@@ -353,7 +410,7 @@ func (s *Server) directMessage(to string, from string, sessionID string, message
 
 func (s *Server) updateOtherSessions(to string, from string, currentSessionID string, messageText []byte) {
 	s.mu.Lock()
-	sessions, _ := s.connections[from]
+	sessions := s.connections[from]
 	s.mu.Unlock()
 
 	message, err := s.marshalMessage(Message{
