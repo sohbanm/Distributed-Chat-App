@@ -90,6 +90,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	if _, exists := s.connections[username]; !exists {
 		s.connections[username] = make(map[string]*websocket.Conn)
+		s.subscribeToDirectMessage(username)
 	}
 	s.connections[username][sessionID] = conn
 	s.mu.Unlock()
@@ -143,7 +144,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			s.joinChannel(msg.From, msg.To)
 			s.broadcast(msg.From, msg.To, []byte(msg.Message))
 		} else if msg.Type == "directMessage" && msg.To != "" && msg.From != "" {
-			s.directMessage(msg.To, msg.From, msg.SessionID, []byte(msg.Message))
+			if err := s.redisClient.Publish(s.ctx, "user:"+msg.To, message).Err(); err != nil {
+				fmt.Printf("Error publishing message to user %s: %v\n", msg.To, err)
+			}
 		} else if msg.Type == "createChannel" && msg.From != "" {
 			s.createChannel(msg.From, []byte(msg.Message))
 		}
@@ -199,7 +202,6 @@ func (s *Server) createChannelList() []string {
 // -- REDIS --
 
 // REDIS SUBSCRIPTION LISTS
-
 func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
 	for {
 		msg, err := subscriber.ReceiveMessage(s.ctx)
@@ -235,8 +237,13 @@ func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
 	}
 }
 
-// REDIS SUBSCRIPTION GROUP MESSAGING
+// REDIS SUBSCRIPTION DIRECT MESSAGING
+func (s *Server) subscribeToDirectMessage(user string) {
+	subscriber := s.redisClient.Subscribe(s.ctx, "user:"+user)
+	go s.handleGroupMessages(user, subscriber)
+}
 
+// REDIS SUBSCRIPTION GROUP MESSAGING
 func (s *Server) joinChannel(username string, channelName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -271,7 +278,6 @@ func (s *Server) handleGroupMessages(channelName string, subscriber *redis.PubSu
 			return
 		}
 
-		// Broadcast the message to WebSocket clients in this channel
 		var message Message
 		if err := json.Unmarshal([]byte(msg.Payload), &message); err != nil {
 			fmt.Printf("Error unmarshaling message for channel %s: %v\n", channelName, err)
@@ -279,12 +285,11 @@ func (s *Server) handleGroupMessages(channelName string, subscriber *redis.PubSu
 		}
 		if message.Type == "broadcast" {
 			s.broadcastMessage([]byte(msg.Payload), channelName)
+		} else if message.Type == "directMessage" {
+			s.directMessage(message.To, message.From, message.SessionID, []byte(message.Message))
+		} else {
+			fmt.Printf("Invalid message type for channel %s: %s\n", channelName, message.Type)
 		}
-		// else if message.Type == "directMessage" {
-		// 	s.directMessage(message.To, message.From, message.SessionID, []byte(message.Message))
-		// } else {
-		// 	fmt.Printf("Invalid message type for channel %s: %s\n", channelName, message.Type)
-		// }
 	}
 }
 
