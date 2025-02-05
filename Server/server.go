@@ -90,6 +90,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	if _, exists := s.connections[username]; !exists {
 		s.connections[username] = make(map[string]*websocket.Conn)
+		s.addUserToRedis(username)
 		s.subscribeToDirectMessage(username)
 	}
 	s.connections[username][sessionID] = conn
@@ -118,6 +119,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		delete(s.connections[username], sessionID)
 		if len(s.connections[username]) == 0 {
+			s.removeUserFromRedis(username)
 			delete(s.connections, username)
 		}
 		s.mu.Unlock()
@@ -157,14 +159,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // ----------ISOLATED METHODS----------
 func (s *Server) createChannel(from string, messageText []byte) {
-	var message = string(messageText)
+	var channelName = string(messageText)
 	s.mu.Lock()
-	s.channels[message] = make(map[string]struct{})
-	s.channels[message][from] = struct{}{}
-	s.mu.Unlock()
+	if _, exists := s.channels[channelName]; exists {
+		s.mu.Unlock()
+	} else {
+		s.channels[channelName] = make(map[string]struct{})
+		s.channels[channelName][from] = struct{}{}
+		s.mu.Unlock()
+		s.addChannelToRedis(channelName)
+		s.broadcastChannelList()
+	}
 
-	s.broadcastChannelList()
-	s.subscribeToGroup(message)
+	s.subscribeToGroup(channelName)
 }
 
 func (s *Server) marshalMessage(message Message) ([]byte, error) {
@@ -176,32 +183,50 @@ func (s *Server) marshalMessage(message Message) ([]byte, error) {
 	return messageJSON, nil
 }
 
-// ----------LIST GENERATION----------
-func (s *Server) createUserList() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// ---- REDIS ----
 
-	userList := make([]string, 0, len(s.connections))
-	for username := range s.connections {
-		userList = append(userList, username)
+// REDIS LIST UPDATE AND GETTERS
+func (s *Server) addUserToRedis(username string) {
+	if err := s.redisClient.SAdd(s.ctx, "userList", username).Err(); err != nil {
+		fmt.Printf("Error adding user %s to Redis: %v\n", username, err)
 	}
-	return userList
 }
 
-func (s *Server) createChannelList() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	channelList := make([]string, 0, len(s.channels))
-	for channelName := range s.channels {
-		channelList = append(channelList, channelName)
+func (s *Server) removeUserFromRedis(username string) {
+	if err := s.redisClient.SRem(s.ctx, "userList", username).Err(); err != nil {
+		fmt.Printf("Error removing user %s from Redis: %v\n", username, err)
 	}
-	return channelList
 }
 
-// -- REDIS --
+func (s *Server) getUserListFromRedis() ([]string, error) {
+	userList, err := s.redisClient.SMembers(s.ctx, "userList").Result()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving user list from Redis: %v", err)
+	}
+	return userList, nil
+}
 
-// REDIS SUBSCRIPTION LISTS
+func (s *Server) addChannelToRedis(channelName string) {
+	if err := s.redisClient.SAdd(s.ctx, "channelList", channelName).Err(); err != nil {
+		fmt.Printf("Error adding channel %s to Redis: %v\n", channelName, err)
+	}
+}
+
+func (s *Server) removeChannelFromRedis(channelName string) {
+	if err := s.redisClient.SRem(s.ctx, "channelList", channelName).Err(); err != nil {
+		fmt.Printf("Error removing channel %s from Redis: %v\n", channelName, err)
+	}
+}
+
+func (s *Server) getChannelListFromRedis() ([]string, error) {
+	channelList, err := s.redisClient.SMembers(s.ctx, "channelList").Result()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving channel list from Redis: %v", err)
+	}
+	return channelList, nil
+}
+
+// REDIS LISTS HANDLER
 func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
 	for {
 		msg, err := subscriber.ReceiveMessage(s.ctx)
@@ -240,7 +265,7 @@ func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
 // REDIS SUBSCRIPTION DIRECT MESSAGING
 func (s *Server) subscribeToDirectMessage(user string) {
 	subscriber := s.redisClient.Subscribe(s.ctx, "user:"+user)
-	go s.handleGroupMessages(user, subscriber)
+	go s.handleMessages(user, subscriber)
 }
 
 // REDIS SUBSCRIPTION GROUP MESSAGING
@@ -251,6 +276,7 @@ func (s *Server) joinChannel(username string, channelName string) {
 	// Add the user to the channel in memory
 	if _, exists := s.channels[channelName]; !exists {
 		s.channels[channelName] = make(map[string]struct{})
+		s.addChannelToRedis(channelName)
 	}
 
 	s.channels[channelName][username] = struct{}{}
@@ -266,10 +292,11 @@ func (s *Server) subscribeToGroup(channelName string) {
 	s.subscribers[channelName] = subscriber
 
 	// Start a goroutine to handle incoming messages for this channel
-	go s.handleGroupMessages(channelName, subscriber)
+	go s.handleMessages(channelName, subscriber)
 }
 
-func (s *Server) handleGroupMessages(channelName string, subscriber *redis.PubSub) {
+// REDIS MESSAGE HANDLER
+func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
 	for {
 		msg, err := subscriber.ReceiveMessage(s.ctx)
 
@@ -314,7 +341,11 @@ func (s *Server) broadcast(from string, to string, messageText []byte) {
 }
 
 func (s *Server) broadcastUserList() {
-	userList := s.createUserList()
+	userList, err := s.getUserListFromRedis()
+	if err != nil {
+		fmt.Println("Error retrieving user list from Redis:", err)
+		return
+	}
 
 	userListJSON, err := json.Marshal(userList)
 	if err != nil {
@@ -336,7 +367,11 @@ func (s *Server) broadcastUserList() {
 }
 
 func (s *Server) broadcastChannelList() {
-	channelList := s.createChannelList()
+	channelList, err := s.getChannelListFromRedis()
+	if err != nil {
+		fmt.Println("Error retrieving channel list from Redis:", err)
+		return
+	}
 
 	userListJSON, err := json.Marshal(channelList)
 	if err != nil {
@@ -446,6 +481,7 @@ func (s *Server) sendMessage(conn *websocket.Conn, message []byte, username stri
 		conn.Close()
 		delete(sessions, sessionID)
 		if len(sessions) == 0 {
+			s.removeUserFromRedis(username)
 			delete(s.connections, username)
 			if channel != "" {
 				if _, exists := s.channels[channel]; exists {
