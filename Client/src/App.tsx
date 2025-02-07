@@ -19,7 +19,9 @@ function App() {
   const [directMessage, setDirectMessage] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("");
-  const [messages, setMessages] = useState<string[]>([]);
+  // const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<{ from: string; to: string; message: string; type: string; }[]>([]);
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -32,26 +34,32 @@ function App() {
 
       socket.onmessage = (event) => {
         const msg: Message = JSON.parse(event.data);
-        console.log(msg)
-        
-        if (msg.type === "broadcast") {
-          setMessages((prevMessages) => [...prevMessages, `In channel "${msg.to || "CHANNEL"}" "${msg.from || "Server"}" said: ${msg.message}`]);
-        } else if (msg.type === "directMessage") {
-          setMessages((prevMessages) => [...prevMessages, `${msg.from || "Server"} said to ${msg.to || "Client"}: ${msg.message}`]);
-        } else if (msg.type === "userList") {    
+        console.log(msg);
+      
+        if (msg.type === "broadcast" || msg.type === "directMessage" || msg.type === "sessionUpdate") {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              from: msg.from || "Server",
+              to: msg.to || (msg.type === "broadcast" ? "CHANNEL" : "Client"),
+              message: msg.message,
+              type: msg.type,
+            }
+          ]);
+        }
+      
+        if (msg.type === "userList") {
           const updatedUsers = JSON.parse(msg.message) as string[];
           setConnectedUsers(updatedUsers.filter((user) => user !== username));
         } else if (msg.type === "channelList") {
           const updatedChannels = JSON.parse(msg.message) as string[];
           setConnectedChannels(updatedChannels);
         } else if (msg.type === "sessionID") {
-          const newSessionID = msg.message;
-          setSessionID(newSessionID);
-        } else if (msg.type === "sessionUpdate") {
-          setMessages((prevMessages) => [...prevMessages, `${msg.from || "Server"} said to ${msg.to || "Client"}: ${msg.message}`]);
+          setSessionID(msg.message);
         }
       };
-
+      
+      
       socket.onerror = (error) => {
         console.error("WebSocket error:", error);
       };
@@ -101,7 +109,15 @@ function App() {
   const sendDirectMessage = () => {
     if (ws && selectedUser) {
       const msg: Message = { type: "directMessage", to: selectedUser, from: username, message: directMessage, ...(sessionID && { sessionID }) };      
-      setMessages((prevMessages) => [...prevMessages, `${msg.from || "Server"} said to ${msg.to || "Client"}: ${msg.message}`]);
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          from: msg.from || "Server",
+          to: msg.to || (msg.type === "broadcast" ? "CHANNEL" : "Client"),
+          message: msg.message,
+          type: msg.type,
+        }
+      ]);
       ws.send(JSON.stringify(msg));
       setDirectMessage("");
     }
@@ -198,12 +214,62 @@ function App() {
             <button onClick={sendDirectMessage}>Send Direct Message</button>
           </div>
           <div>
-            <h2>Messages</h2>
+            {/* <h2>Messages</h2>
             <ul>
               {messages.map((msg, index) => (
                 <li key={index}>{msg}</li>
               ))}
-            </ul>
+            </ul> */}
+            <div>
+              <h2>Messages</h2>
+              <div
+                style={{
+                  maxHeight: "300px",
+                  overflowY: "auto",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  padding: "10px",
+                  backgroundColor: "#f9f9f9",
+                  maxWidth: "75%",
+                  margin: "0 auto",
+                }}
+              >
+                {messages.map((msg, index) => {
+                  const isSentByUser = msg.from !== username;
+
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        display: "flex",
+                        justifyContent: isSentByUser ? "flex-end" : "flex-start",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: "60%",
+                          padding: "8px",
+                          borderRadius: "6px",
+                          backgroundColor: isSentByUser ? "#d6eaff" : "#d4f8d4", // Light blue for sent, light green for received
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                          textAlign: "left",
+                        }}
+                      >
+                        <strong style={{ color: "#007bff" }}>{msg.from}</strong>{" "}
+                        {msg.type === "directMessage" ? (
+                          <span style={{ fontStyle: "italic", color: "#555" }}>to {msg.to}</span>
+                        ) : (
+                          <span style={{ fontWeight: "bold", color: "#28a745" }}>in {msg.to}</span>
+                        )}
+                        :
+                        <p style={{ margin: "4px 0", color: "#333" }}>{msg.message}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -118,6 +118,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.mu.Lock()
 		delete(s.connections[username], sessionID)
+		fmt.Println("User", username, "disconnected", "session", sessionID)
 		if len(s.connections[username]) == 0 {
 			s.removeUserFromRedis(username)
 			delete(s.connections, username)
@@ -149,6 +150,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err := s.redisClient.Publish(s.ctx, "user:"+msg.To, message).Err(); err != nil {
 				fmt.Printf("Error publishing message to user %s: %v\n", msg.To, err)
 			}
+			s.updateOtherSessions(msg.To, msg.From, msg.SessionID, []byte(msg.Message))
 		} else if msg.Type == "createChannel" && msg.From != "" {
 			s.createChannel(msg.From, []byte(msg.Message))
 		}
@@ -309,6 +311,8 @@ func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
 		if err := json.Unmarshal([]byte(msg.Payload), &message); err != nil {
 			fmt.Printf("Error unmarshaling message for channel %s: %v\n", channelName, err)
 			continue
+		} else {
+			fmt.Printf("Received message for channel %s: %s\n", channelName, message.Message)
 		}
 		if message.Type == "broadcast" {
 			s.broadcastMessage([]byte(msg.Payload), channelName)
@@ -436,15 +440,14 @@ func (s *Server) directMessage(to string, from string, sessionID string, message
 		From:    from,
 	})
 	if err != nil {
+		fmt.Println("Error marshaling direct message:", err)
 		return
 	}
-
 	for sessionID, conn := range sessions {
 		s.mu.Lock()
 		s.sendMessage(conn, message, to, sessions, sessionID, "")
 		s.mu.Unlock()
 	}
-
 	s.updateOtherSessions(to, from, sessionID, messageText)
 }
 
