@@ -214,17 +214,11 @@ function App() {
             <button onClick={sendDirectMessage}>Send Direct Message</button>
           </div>
           <div>
-            {/* <h2>Messages</h2>
-            <ul>
-              {messages.map((msg, index) => (
-                <li key={index}>{msg}</li>
-              ))}
-            </ul> */}
             <div>
               <h2>Messages</h2>
               <div
                 style={{
-                  maxHeight: "300px",
+                  maxHeight: "600px",
                   overflowY: "auto",
                   border: "1px solid #ddd",
                   borderRadius: "8px",
@@ -249,6 +243,7 @@ function App() {
                       <div
                         style={{
                           maxWidth: "60%",
+                          minWidth: "10%",
                           padding: "8px",
                           borderRadius: "6px",
                           backgroundColor: isSentByUser ? "#d6eaff" : "#d4f8d4", // Light blue for sent, light green for received
@@ -256,13 +251,29 @@ function App() {
                           textAlign: "left",
                         }}
                       >
-                        <strong style={{ color: "#007bff" }}>{msg.from}</strong>{" "}
-                        {msg.type === "directMessage" ? (
-                          <span style={{ fontStyle: "italic", color: "#555" }}>to {msg.to}</span>
-                        ) : (
-                          <span style={{ fontWeight: "bold", color: "#28a745" }}>in {msg.to}</span>
-                        )}
-                        :
+                        {/* From and To section */}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: "4px",
+                          }}
+                        >
+                          <strong style={{ color: "#000", fontWeight: "normal" }}>
+                            From <span style={{ color: "#007bff", fontWeight: "bold" }}>{msg.from}</span>
+                          </strong>
+                          {msg.type === "directMessage" || msg.type === "sessionUpdate" ? (
+                            <span style={{ color: "#000"}}>
+                              To <span style={{ color: "#28a745", fontWeight: "bold" }}>{msg.to}</span>
+                            </span>
+                          ) : (
+                            <span style={{ color: "#000"}}>
+                              in channel <span style={{ color: "#28a745", fontWeight: "bold" }}>{msg.to}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Message Content */}
                         <p style={{ margin: "4px 0", color: "#333" }}>{msg.message}</p>
                       </div>
                     </div>

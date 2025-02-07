@@ -24,6 +24,7 @@ type Server struct {
 	connections    map[string]map[string]*websocket.Conn
 	channels       map[string]map[string]struct{}
 	subscribers    map[string]*redis.PubSub
+	subscribedToDM map[string]struct{}
 	mu             sync.Mutex
 	sessionIDCount int64
 	redisClient    *redis.Client
@@ -48,6 +49,7 @@ func NewServer() *Server {
 		connections:    make(map[string]map[string]*websocket.Conn), // userName -> sessionID -> websocket Conn
 		channels:       make(map[string]map[string]struct{}),        // channelName -> userName
 		subscribers:    make(map[string]*redis.PubSub),              // channelName -> redisChannel
+		subscribedToDM: make(map[string]struct{}),                   // userName to record DM channel subscriptions
 		sessionIDCount: 1,
 		redisClient:    redisClient,
 		ctx:            ctx,
@@ -118,7 +120,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.mu.Lock()
 		delete(s.connections[username], sessionID)
-		fmt.Println("User", username, "disconnected", "session", sessionID)
 		if len(s.connections[username]) == 0 {
 			s.removeUserFromRedis(username)
 			delete(s.connections, username)
@@ -266,7 +267,13 @@ func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
 
 // REDIS SUBSCRIPTION DIRECT MESSAGING
 func (s *Server) subscribeToDirectMessage(user string) {
+	if _, exists := s.subscribedToDM[user]; exists {
+		fmt.Printf("Already connected to direct messages for %s\n", user)
+		return
+	}
 	subscriber := s.redisClient.Subscribe(s.ctx, "user:"+user)
+	s.subscribedToDM[user] = struct{}{}
+
 	go s.handleMessages(user, subscriber)
 }
 
@@ -317,6 +324,7 @@ func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
 		if message.Type == "broadcast" {
 			s.broadcastMessage([]byte(msg.Payload), channelName)
 		} else if message.Type == "directMessage" {
+			fmt.Println("Direct Message received")
 			s.directMessage(message.To, message.From, message.SessionID, []byte(message.Message))
 		} else {
 			fmt.Printf("Invalid message type for channel %s: %s\n", channelName, message.Type)
@@ -424,6 +432,7 @@ func (s *Server) broadcastMessage(message []byte, channel string) {
 
 // ----------DIRECT MESSAGING----------
 func (s *Server) directMessage(to string, from string, sessionID string, messageText []byte) {
+	fmt.Println("directMessage method called")
 	s.mu.Lock()
 	sessions, exists := s.connections[to]
 	s.mu.Unlock()
@@ -443,7 +452,9 @@ func (s *Server) directMessage(to string, from string, sessionID string, message
 		fmt.Println("Error marshaling direct message:", err)
 		return
 	}
+
 	for sessionID, conn := range sessions {
+		fmt.Printf("Sending direct message to %s (session %s)\n", to, sessionID)
 		s.mu.Lock()
 		s.sendMessage(conn, message, to, sessions, sessionID, "")
 		s.mu.Unlock()
