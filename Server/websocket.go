@@ -34,7 +34,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	username := r.URL.Query().Get("username")
 	if username == "" {
-		username = fmt.Sprintf("user-%d", len(s.connections)+1)
+		username = fmt.Sprintf("user-%d", len(s.userToConn)+1)
 	}
 
 	// Generate a new Session ID
@@ -42,12 +42,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Add to connections
 	s.mu.Lock()
-	if _, exists := s.connections[username]; !exists {
-		s.connections[username] = make(map[string]*websocket.Conn)
+	if _, exists := s.userToConn[username]; !exists {
+		s.userToConn[username] = make(map[string]*websocket.Conn)
 		s.addUserToRedis(username)
 		s.subscribeToDirectMessage(username)
 	}
-	s.connections[username][sessionID] = conn
+	s.userToConn[username][sessionID] = conn
 	s.mu.Unlock()
 
 	// Notify the client of its session ID
@@ -71,10 +71,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		s.mu.Lock()
-		delete(s.connections[username], sessionID)
-		if len(s.connections[username]) == 0 {
-			s.removeUserFromRedis(username)
-			delete(s.connections, username)
+		delete(s.userToConn[username], sessionID)
+		if len(s.userToConn[username]) == 0 {
+			delete(s.userToConn, username)
 		}
 		s.mu.Unlock()
 		fmt.Printf("User %s (session %s) disconnected\n", username, sessionID)
@@ -114,11 +113,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createChannel(from string, messageText []byte) {
 	var channelName = string(messageText)
 	s.mu.Lock()
-	if _, exists := s.channels[channelName]; exists {
+	if _, exists := s.channelToUser[channelName]; exists {
 		s.mu.Unlock()
 	} else {
-		s.channels[channelName] = make(map[string]struct{})
-		s.channels[channelName][from] = struct{}{}
+		s.channelToUser[channelName] = make(map[string]struct{})
+		s.channelToUser[channelName][from] = struct{}{}
 		s.mu.Unlock()
 		s.addChannelToRedis(channelName)
 		s.broadcastChannelList()

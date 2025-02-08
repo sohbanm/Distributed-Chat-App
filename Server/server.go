@@ -11,14 +11,14 @@ import (
 )
 
 type Server struct {
-	connections    map[string]map[string]*websocket.Conn
-	channels       map[string]map[string]struct{}
-	subscribers    map[string]*redis.PubSub
-	subscribedToDM map[string]struct{}
-	mu             sync.Mutex
-	sessionIDCount int64
-	redisClient    *redis.Client
-	ctx            context.Context
+	userToConn          map[string]map[string]*websocket.Conn
+	channelToUser       map[string]map[string]struct{}
+	subscribedToChannel map[string]struct{}
+	subscribedToDM      map[string]struct{}
+	mu                  sync.Mutex
+	sessionIDCount      int64
+	redisClient         *redis.Client
+	ctx                 context.Context
 }
 
 func NewServer() *Server {
@@ -36,12 +36,12 @@ func NewServer() *Server {
 	}
 
 	return &Server{
-		connections:    make(map[string]map[string]*websocket.Conn), // userName -> sessionID -> websocket Conn
-		channels:       make(map[string]map[string]struct{}),        // channelName -> userName
-		subscribers:    make(map[string]*redis.PubSub),              // channelName -> redisChannel
-		subscribedToDM: make(map[string]struct{}),                   // userName to record DM channel subscriptions
-		sessionIDCount: 1,
-		redisClient:    redisClient,
-		ctx:            ctx,
+		userToConn:          make(map[string]map[string]*websocket.Conn), // userName -> sessionID -> websocket Conn
+		channelToUser:       make(map[string]map[string]struct{}),        // channelName -> userName
+		subscribedToChannel: make(map[string]struct{}),                   // channelName to record channel subscriptions
+		subscribedToDM:      make(map[string]struct{}),                   // userName to record DM channel subscriptions
+		sessionIDCount:      1,
+		redisClient:         redisClient,
+		ctx:                 ctx,
 	}
 }

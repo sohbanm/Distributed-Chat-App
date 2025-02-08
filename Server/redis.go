@@ -7,15 +7,15 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+// func (s *Server) removeUserFromRedis(username string) {
+// 	if err := s.redisClient.SRem(s.ctx, "userList", username).Err(); err != nil {
+// 		fmt.Printf("Error removing user %s from Redis: %v\n", username, err)
+// 	}
+// }
+
 func (s *Server) addUserToRedis(username string) {
 	if err := s.redisClient.SAdd(s.ctx, "userList", username).Err(); err != nil {
 		fmt.Printf("Error adding user %s to Redis: %v\n", username, err)
-	}
-}
-
-func (s *Server) removeUserFromRedis(username string) {
-	if err := s.redisClient.SRem(s.ctx, "userList", username).Err(); err != nil {
-		fmt.Printf("Error removing user %s from Redis: %v\n", username, err)
 	}
 }
 
@@ -27,15 +27,15 @@ func (s *Server) getUserListFromRedis() ([]string, error) {
 	return userList, nil
 }
 
+// func (s *Server) removeChannelFromRedis(channelName string) {
+// 	if err := s.redisClient.SRem(s.ctx, "channelList", channelName).Err(); err != nil {
+// 		fmt.Printf("Error removing channel %s from Redis: %v\n", channelName, err)
+// 	}
+// }
+
 func (s *Server) addChannelToRedis(channelName string) {
 	if err := s.redisClient.SAdd(s.ctx, "channelList", channelName).Err(); err != nil {
 		fmt.Printf("Error adding channel %s to Redis: %v\n", channelName, err)
-	}
-}
-
-func (s *Server) removeChannelFromRedis(channelName string) {
-	if err := s.redisClient.SRem(s.ctx, "channelList", channelName).Err(); err != nil {
-		fmt.Printf("Error removing channel %s from Redis: %v\n", channelName, err)
 	}
 }
 
@@ -98,22 +98,22 @@ func (s *Server) joinChannel(username string, channelName string) {
 	defer s.mu.Unlock()
 
 	// Add the user to the channel in memory
-	if _, exists := s.channels[channelName]; !exists {
-		s.channels[channelName] = make(map[string]struct{})
+	if _, exists := s.channelToUser[channelName]; !exists {
+		s.channelToUser[channelName] = make(map[string]struct{})
 		s.addChannelToRedis(channelName)
 	}
 
-	s.channels[channelName][username] = struct{}{}
+	s.channelToUser[channelName][username] = struct{}{}
 	s.subscribeToGroup(channelName)
 }
 
 func (s *Server) subscribeToGroup(channelName string) {
-	if _, exists := s.subscribers[channelName]; exists {
+	if _, exists := s.subscribedToChannel[channelName]; exists {
 		fmt.Printf("Already connected to the channel %s\n", channelName)
 		return
 	}
 	subscriber := s.redisClient.Subscribe(s.ctx, "channel:"+channelName)
-	s.subscribers[channelName] = subscriber
+	s.subscribedToChannel[channelName] = struct{}{}
 
 	// Start a goroutine to handle incoming messages for this channel
 	go s.handleMessages(channelName, subscriber)

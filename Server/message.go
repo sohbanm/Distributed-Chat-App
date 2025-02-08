@@ -101,16 +101,16 @@ func (s *Server) broadcastMessage(message []byte, channel string) {
 
 	if channel == "" {
 		// Send list of usernames/channels to all connected clients
-		for username, sessions := range s.connections {
+		for username, sessions := range s.userToConn {
 			for sessionID, conn := range sessions {
 				s.sendMessage(conn, message, username, sessions, sessionID, channel)
 			}
 		}
 	} else {
 		// Send message to all connected clients of the channel
-		if users, exists := s.channels[channel]; exists {
+		if users, exists := s.channelToUser[channel]; exists {
 			for username := range users {
-				sessions := s.connections[username]
+				sessions := s.userToConn[username]
 				for sessionID, conn := range sessions {
 					s.sendMessage(conn, message, username, sessions, sessionID, "")
 				}
@@ -123,7 +123,7 @@ func (s *Server) broadcastMessage(message []byte, channel string) {
 
 func (s *Server) directMessage(to string, from string, sessionID string, messageText []byte) {
 	s.mu.Lock()
-	sessions, exists := s.connections[to]
+	sessions, exists := s.userToConn[to]
 	s.mu.Unlock()
 
 	if !exists {
@@ -152,7 +152,7 @@ func (s *Server) directMessage(to string, from string, sessionID string, message
 
 func (s *Server) updateOtherSessions(to string, from string, currentSessionID string, messageText []byte) {
 	s.mu.Lock()
-	sessions := s.connections[from]
+	sessions := s.userToConn[from]
 	s.mu.Unlock()
 
 	message, err := s.marshalMessage(Message{
@@ -181,14 +181,13 @@ func (s *Server) sendMessage(conn *websocket.Conn, message []byte, username stri
 		conn.Close()
 		delete(sessions, sessionID)
 		if len(sessions) == 0 {
-			s.removeUserFromRedis(username)
-			delete(s.connections, username)
+			delete(s.userToConn, username)
 			if channel != "" {
-				if _, exists := s.channels[channel]; exists {
-					delete(s.channels[channel], username) // Remove user from the channel map
+				if _, exists := s.channelToUser[channel]; exists {
+					delete(s.channelToUser[channel], username) // Remove user from the channel map
 				}
-				if len(s.channels[channel]) == 0 {
-					delete(s.channels, channel)
+				if len(s.channelToUser[channel]) == 0 {
+					delete(s.channelToUser, channel)
 				}
 			}
 		}
