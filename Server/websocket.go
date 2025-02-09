@@ -102,6 +102,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err := s.redisClient.Publish(s.ctx, "user:"+msg.To, message).Err(); err != nil {
 				fmt.Printf("Error publishing message to user %s: %v\n", msg.To, err)
 			}
+			s.updateOtherSessions(msg.To, msg.From, msg.SessionID, []byte(msg.Message))
 		} else if msg.Type == "createChannel" && msg.From != "" {
 			s.createChannel(msg.From, []byte(msg.Message))
 		}
