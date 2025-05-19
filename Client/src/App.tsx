@@ -26,7 +26,7 @@ function App() {
 
   useEffect(() => {
     if (isLoggedIn && username) {
-      const socket = new WebSocket(`ws://localhost:3000/chat?username=${username}`);
+      const socket = new WebSocket(`ws://localhost:3001/chat?username=${username}`);
 
       socket.onopen = () => {
         console.log("WebSocket connection established.");

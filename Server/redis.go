@@ -120,6 +120,7 @@ func (s *Server) subscribeToGroup(channelName string) {
 }
 
 func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
+	fmt.Println("Subscribed and listening to channel", channelName)
 	for {
 		msg, err := subscriber.ReceiveMessage(s.ctx)
 
