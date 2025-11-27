@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 
 interface Message {
-  type: "broadcast" | "directMessage" | "createChannel" | "userList" | "channelList" | "sessionID" | "sessionUpdate";
+  type: "broadcast" | "directMessage" | "createChannel" | "userList" | "channelList" | "sessionID" | "sessionUpdate" | "ping" | "pong";
   to?: string;
   from?: string;
   sessionID?: string;
@@ -25,14 +25,31 @@ function App() {
 
   useEffect(() => {
     if (isLoggedIn && username) {
-      const socket = new WebSocket(`ws://localhost:3001/chat?username=${username}`);
+      const socket = new WebSocket(`ws://localhost:8080/chat?username=${username}`);
+      let pingInterval: number;
 
       socket.onopen = () => {
         console.log("WebSocket connection established.");
+
+        // --- HEARTBEAT LOGIC START ---
+        // Send a ping every 30 seconds to keep the Nginx connection alive
+        pingInterval = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            const pingMsg: Message = { 
+              type: "ping", 
+              message: "keep-alive", 
+              from: username 
+            };
+            socket.send(JSON.stringify(pingMsg));
+            console.log("Ping sent"); // Optional debugging
+          }
+        }, 30000); 
+
       };
 
       socket.onmessage = (event) => {
         const msg: Message = JSON.parse(event.data);
+        if (msg.type === "pong") return;
         console.log(msg);
       
         if (msg.type === "broadcast" || msg.type === "directMessage" || msg.type === "sessionUpdate") {

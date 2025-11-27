@@ -95,6 +95,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if msg.Type == "ping" {
+			fmt.Printf("Ping received from %s\n", username)
+			pongMsg := Message{Type: "pong", Message: "pong"}
+			pongBytes, _ := json.Marshal(pongMsg)
+			conn.WriteMessage(websocket.TextMessage, pongBytes)
+			continue
+		}
+
 		if msg.Type == "broadcast" {
 			s.joinChannel(msg.From, msg.To)
 			s.broadcast(msg.From, msg.To, []byte(msg.Message))
