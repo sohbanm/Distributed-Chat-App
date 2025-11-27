@@ -100,7 +100,6 @@ func (s *Server) joinChannel(username string, channelName string) {
 	// Add the user to the channel in memory
 	if _, exists := s.channelToUser[channelName]; !exists {
 		s.channelToUser[channelName] = make(map[string]struct{})
-		s.addChannelToRedis(channelName)
 	}
 
 	s.channelToUser[channelName][username] = struct{}{}
@@ -136,6 +135,7 @@ func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
 		} else {
 			fmt.Printf("Received message for channel %s: %s\n", channelName, message.Message)
 		}
+
 		if message.Type == "broadcast" {
 			s.broadcastMessage([]byte(msg.Payload), channelName)
 		} else if message.Type == "directMessage" {
