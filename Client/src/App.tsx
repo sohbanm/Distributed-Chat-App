@@ -19,7 +19,6 @@ function App() {
   const [directMessage, setDirectMessage] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("");
-  // const [messages, setMessages] = useState<string[]>([]);
   const [messages, setMessages] = useState<{ from: string; to: string; message: string; type: string; }[]>([]);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -184,7 +183,6 @@ function App() {
               />
               <button onClick={sendBroadcastMessage}>Send Broadcast</button>
             </div>
-{/*  */}
           </div>
 
           <div>
