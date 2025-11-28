@@ -65,14 +65,14 @@ func (s *Server) subscribeToListUpdates(subscriber *redis.PubSub) {
 		if message.Type == "userList" {
 			var userList []string
 			if err := json.Unmarshal([]byte(message.Message), &userList); err == nil {
-				s.broadcastMessage([]byte(msg.Payload), "")
+				s.broadcastMessage([]byte(msg.Payload), "", "")
 			} else {
 				fmt.Printf("Error unmarshaling user list: %v\n", err)
 			}
 		} else if message.Type == "channelList" {
 			var channelList []string
 			if err := json.Unmarshal([]byte(message.Message), &channelList); err == nil {
-				s.broadcastMessage([]byte(msg.Payload), "")
+				s.broadcastMessage([]byte(msg.Payload), "", "")
 			} else {
 				fmt.Printf("Error unmarshaling channel list: %v\n", err)
 			}
@@ -137,7 +137,7 @@ func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
 		}
 
 		if message.Type == "broadcast" {
-			s.broadcastMessage([]byte(msg.Payload), channelName)
+			s.broadcastMessage([]byte(msg.Payload), channelName, message.From)
 		} else if message.Type == "directMessage" {
 			s.directMessage(message.To, message.From, message.SessionID, []byte(message.Message))
 		} else if message.Type == "sessionUpdate" {

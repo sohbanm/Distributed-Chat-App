@@ -95,7 +95,7 @@ func (s *Server) broadcastChannelList() {
 	}
 }
 
-func (s *Server) broadcastMessage(message []byte, channel string) {
+func (s *Server) broadcastMessage(message []byte, channel string, from string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -110,6 +110,9 @@ func (s *Server) broadcastMessage(message []byte, channel string) {
 		// Send message to all connected clients of the channel
 		if users, exists := s.channelToUser[channel]; exists {
 			for username := range users {
+				if username == from {
+					continue
+				}
 				sessions := s.userToConn[username]
 				for sessionID, conn := range sessions {
 					s.sendMessage(conn, message, username, sessions, sessionID, "")

@@ -86,6 +86,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		msg.SessionID = sessionID
+
 		if msg.Type == "ping" {
 			fmt.Printf("Ping received from %s\n", username)
 			pongMsg := Message{Type: "pong", Message: "pong"}
@@ -95,6 +97,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if msg.Type == "broadcast" {
+			joinMsg := Message{Type: "channelJoin", From: msg.From, To: msg.To, Message: msg.To}
+			joinBytes, _ := json.Marshal(joinMsg)
+			s.redisClient.Publish(s.ctx, "user:"+msg.From, joinBytes)
+
+			updateMsg := msg
+			updateMsg.Type = "sessionUpdate"
+			updateBytes, _ := json.Marshal(updateMsg)
+			s.redisClient.Publish(s.ctx, "user:"+msg.From, updateBytes)
+
+			echoBytes, _ := json.Marshal(msg)
+			conn.WriteMessage(websocket.TextMessage, echoBytes)
+
 			s.joinChannel(msg.From, msg.To)
 			s.broadcast(msg.From, msg.To, []byte(msg.Message))
 		} else if msg.Type == "directMessage" && msg.To != "" && msg.From != "" {

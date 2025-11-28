@@ -10,6 +10,6 @@ func main() {
 
 	http.HandleFunc("/chat", server.handleWebSocket)
 
-	fmt.Println("Server started at Port 3002")
-	http.ListenAndServe(":3002", nil)
+	fmt.Println("Server started at Port 3001")
+	http.ListenAndServe(":3001", nil)
 }
