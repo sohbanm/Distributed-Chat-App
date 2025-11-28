@@ -31,7 +31,6 @@ function App() {
       socket.onopen = () => {
         console.log("WebSocket connection established.");
 
-        // --- HEARTBEAT LOGIC START ---
         // Send a ping every 30 seconds to keep the Nginx connection alive
         pingInterval = setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {

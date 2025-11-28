@@ -5,21 +5,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
-func (s *Server) generateSessionID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Generate a unique session ID (incremental)
-	sessionID := fmt.Sprintf("%d", s.sessionIDCount)
-	s.sessionIDCount++
-	return sessionID
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +29,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate a new Session ID
-	sessionID := s.generateSessionID()
+	sessionID := uuid.New().String()
 
 	// Add to connections
 	s.mu.Lock()

@@ -16,7 +16,6 @@ type Server struct {
 	subscribedToChannel map[string]struct{}
 	subscribedToDM      map[string]struct{}
 	mu                  sync.Mutex
-	sessionIDCount      int64
 	redisClient         *redis.Client
 	ctx                 context.Context
 }
@@ -40,7 +39,6 @@ func NewServer() *Server {
 		channelToUser:       make(map[string]map[string]struct{}),        // channelName -> userName
 		subscribedToChannel: make(map[string]struct{}),                   // channelName to record channel subscriptions
 		subscribedToDM:      make(map[string]struct{}),                   // userName to record DM channel subscriptions
-		sessionIDCount:      1,
 		redisClient:         redisClient,
 		ctx:                 ctx,
 	}
