@@ -140,6 +140,10 @@ func (s *Server) handleMessages(channelName string, subscriber *redis.PubSub) {
 			s.broadcastMessage([]byte(msg.Payload), channelName)
 		} else if message.Type == "directMessage" {
 			s.directMessage(message.To, message.From, message.SessionID, []byte(message.Message))
+		} else if message.Type == "sessionUpdate" {
+			s.updateOtherSessions(message.To, message.From, message.SessionID, []byte(message.Message))
+		} else if message.Type == "channelJoin" {
+			s.joinChannel(message.From, message.To)
 		} else {
 			fmt.Printf("Invalid message type for channel %s: %s\n", channelName, message.Type)
 		}

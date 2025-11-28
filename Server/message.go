@@ -147,7 +147,6 @@ func (s *Server) directMessage(to string, from string, sessionID string, message
 		s.sendMessage(conn, message, to, sessions, sessionID, "")
 		s.mu.Unlock()
 	}
-	s.updateOtherSessions(to, from, sessionID, messageText)
 }
 
 func (s *Server) updateOtherSessions(to string, from string, currentSessionID string, messageText []byte) {

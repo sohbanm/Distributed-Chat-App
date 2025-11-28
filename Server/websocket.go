@@ -101,7 +101,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err := s.redisClient.Publish(s.ctx, "user:"+msg.To, message).Err(); err != nil {
 				fmt.Printf("Error publishing message to user %s: %v\n", msg.To, err)
 			}
-			s.updateOtherSessions(msg.To, msg.From, msg.SessionID, []byte(msg.Message))
+			updateMsg := msg
+			updateMsg.Type = "sessionUpdate"
+			updateBytes, _ := json.Marshal(updateMsg)
+
+			if err := s.redisClient.Publish(s.ctx, "user:"+msg.From, updateBytes).Err(); err != nil {
+				fmt.Printf("Error publishing session update to user %s: %v\n", msg.From, err)
+			}
 		} else if msg.Type == "createChannel" && msg.From != "" {
 			s.createChannel(msg.From, []byte(msg.Message))
 		}
@@ -112,16 +118,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createChannel(from string, messageText []byte) {
 	var channelName = string(messageText)
-	s.mu.Lock()
-	if _, exists := s.channelToUser[channelName]; exists {
-		s.mu.Unlock()
-	} else {
-		s.channelToUser[channelName] = make(map[string]struct{})
-		s.channelToUser[channelName][from] = struct{}{}
-		s.mu.Unlock()
-		s.addChannelToRedis(channelName)
-		s.broadcastChannelList()
-	}
 
-	s.subscribeToGroup(channelName)
+	s.addChannelToRedis(channelName)
+	s.broadcastChannelList()
+
+	joinMsg := Message{
+		Type:    "channelJoin",
+		From:    from,
+		To:      channelName, // We reuse 'To' for the channel name here
+		Message: channelName,
+	}
+	joinMsgBytes, _ := json.Marshal(joinMsg)
+
+	if err := s.redisClient.Publish(s.ctx, "user:"+from, joinMsgBytes).Err(); err != nil {
+		fmt.Printf("Error publishing channel join for user %s: %v\n", from, err)
+	}
 }
